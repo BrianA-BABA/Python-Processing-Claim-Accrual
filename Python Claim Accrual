@@ -1,0 +1,53 @@
+import os
+import pandas as pd
+from datetime import datetime, timedelta
+
+# Function to parse dates and generate a date range
+def parse_dates_safe(row):
+    try:
+        start_date, end_date = [datetime.strptime(date.strip(), '%m/%d/%Y') for date in row['Episode Range'].split('-')]
+        return pd.date_range(start=start_date, end=end_date)
+    except:
+        return pd.date_range(start=datetime.now(), periods=1)  # Returns current date if parsing fails
+
+# Function to safely convert claim amounts to float
+def safe_float_conversion(amount):
+    try:
+        return float(amount.replace('$', '').replace(',', ''))
+    except:
+        return 0.0  # Return 0 if there's an error in conversion
+
+# Find the first CSV file in the directory
+directory_path = 'C:\\Users\\brian\\Desktop\\Accural AR\\Medicare Drop'
+files = [f for f in os.listdir(directory_path) if f.endswith('.csv')]
+if not files:
+    raise Exception("No CSV files found in the directory.")
+file_path = os.path.join(directory_path, files[0])
+
+# Load the dataset
+data = pd.read_csv(file_path)
+data['Original Episode Range'] = data['Episode Range']  # Preserve the original episode range
+
+# Process the data
+adjusted_expanded_data = pd.DataFrame()
+
+for _, row in data.iterrows():
+    dates = parse_dates_safe(row)
+    num_days = len(dates)
+    claim_amount = safe_float_conversion(row['Claim Amount'])
+    daily_amount = claim_amount / num_days
+    amounts = [round(daily_amount, 2)] * num_days
+    amounts[-1] += claim_amount - sum(amounts)  # Adjust the last day to match exactly
+
+    for date, amount in zip(dates, amounts):
+        new_row = row.copy()
+        new_row['Episode Range'] = date.strftime('%m/%d/%Y')
+        new_row['Claim Amount'] = f'${amount:.2f}'
+        adjusted_expanded_data = pd.concat([adjusted_expanded_data, pd.DataFrame([new_row])], ignore_index=True)
+
+# Save the processed data
+today_date = datetime.now().strftime('%Y-%m-%d')
+output_file_path = f'C:\\Users\\brian\\Desktop\\Accural AR\\Completed\\Medicare File {today_date}.csv'
+adjusted_expanded_data.to_csv(output_file_path, index=False)
+
+print(f"File saved to {output_file_path}")
